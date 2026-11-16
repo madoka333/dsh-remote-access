@@ -1,0 +1,18 @@
+# Adds ZeroTier interfaces to the current Connection Host fence and mounts the plugin.
+# The connection config is replaced as a whole by Cordis; merge any existing
+# connection options here before installing this bundle.
+- id: connection
+  name: '@deepseek-ai/dsh-client-connection'
+  config:
+    trustedHosts: !!js (()=>{try{const os=process.getBuiltinModule('os');const addresses=Object.entries(os.networkInterfaces()).filter(([name])=>/^ZeroTier One \[[0-9a-f]{16}\]$/i.test(name)).flatMap(([,items])=>(items||[]).filter(item=>item.family==='IPv4'&&!item.internal).map(item=>item.address));return [...new Set([...addresses,...((ctx.webStartup&&ctx.webStartup.trustedHosts)||[])])]}catch{return ((ctx.webStartup&&ctx.webStartup.trustedHosts)||[]).slice()}})()
+
+- insert:
+    - id: dsh-remote-access
+      name: dsh-remote-access
+      config:
+        networkIds: []
+        remotePort: 3080
+        allowedClients: []
+        compatShim: true
+        maxConnections: 64
+        retrySeconds: 30

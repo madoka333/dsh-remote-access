@@ -1,0 +1,268 @@
+<!-- dsh-web-compat-shim v1 -->
+<script>
+/* Compatibility shim for older WebKit (iPad Safari < 18.4).
+ *
+ * Why: the client plugin @deepseek-ai/dsh-client-ui-sidebar-documentpreview
+ * bundles pdf.js 6.3.289, which performs this at module scope:
+ *
+ *     if (typeof Iterator.prototype.join !== "function")
+ *       Iterator.prototype.join = function (separator) { return [...this].join(separator); };
+ *
+ * On engines without the global Iterator object that dereference throws
+ * "Can't find variable: Iterator" while the module is being evaluated, so the
+ * whole plugin import fails and the GUI reports "Failed to load plugins".
+ *
+ * This shim defines the missing globals. Every entry is guarded, so on engines
+ * that already implement the feature it is a no-op (Chrome/Edge/Firefox/current
+ * Safari are unaffected). ES5 syntax only, because the engine parsing it may be
+ * old.
+ */
+(function () {
+  "use strict";
+  var g = typeof globalThis !== "undefined" ? globalThis
+        : (typeof window !== "undefined" ? window
+        : (typeof self !== "undefined" ? self : null));
+  if (!g) return;
+
+  function def(target, name, value) {
+    try {
+      Object.defineProperty(target, name, { value: value, writable: true, enumerable: false, configurable: true });
+    } catch (e) {
+      try { target[name] = value; } catch (e2) { /* frozen host object */ }
+    }
+  }
+
+  /* ---------------------------------------------------------------- Iterator */
+  if (typeof g.Iterator === "undefined") {
+    var proto = {};
+    var IteratorShim = function Iterator() {
+      throw new TypeError("Iterator is not a constructor");
+    };
+    IteratorShim.prototype = proto;
+
+    function wrap(nextFn) {
+      var it = { next: nextFn };
+      def(it, Symbol.iterator, function () { return this; });
+      try { Object.setPrototypeOf(it, proto); } catch (e) { /* older engines */ }
+      return it;
+    }
+
+    def(proto, "next", function next() { return { value: undefined, done: true }; });
+    def(proto, Symbol.iterator, function () { return this; });
+
+    def(proto, "toArray", function toArray() {
+      var out = [];
+      for (var step = this.next(); !step.done; step = this.next()) out.push(step.value);
+      return out;
+    });
+    def(proto, "forEach", function forEach(fn) {
+      if (typeof fn !== "function") throw new TypeError("callback is not a function");
+      var index = 0;
+      for (var step = this.next(); !step.done; step = this.next()) fn(step.value, index++);
+      return undefined;
+    });
+    def(proto, "reduce", function reduce(fn, initial) {
+      if (typeof fn !== "function") throw new TypeError("callback is not a function");
+      var index = 0;
+      var step = this.next();
+      var acc;
+      if (arguments.length > 1) {
+        acc = initial;
+      } else {
+        if (step.done) throw new TypeError("Reduce of empty iterator with no initial value");
+        acc = step.value;
+        step = this.next();
+      }
+      while (!step.done) {
+        acc = fn(acc, step.value, index++);
+        step = this.next();
+      }
+      return acc;
+    });
+    def(proto, "map", function map(fn) {
+      if (typeof fn !== "function") throw new TypeError("mapper is not a function");
+      var self = this, index = 0;
+      return wrap(function () {
+        var step = self.next();
+        if (step.done) return step;
+        return { value: fn(step.value, index++), done: false };
+      });
+    });
+    def(proto, "filter", function filter(fn) {
+      if (typeof fn !== "function") throw new TypeError("predicate is not a function");
+      var self = this, index = 0;
+      return wrap(function () {
+        for (;;) {
+          var step = self.next();
+          if (step.done) return step;
+          if (fn(step.value, index++)) return step;
+        }
+      });
+    });
+    def(proto, "take", function take(limit) {
+      var self = this, left = Math.max(0, Number(limit) || 0);
+      return wrap(function () {
+        if (left <= 0) return { value: undefined, done: true };
+        left -= 1;
+        return self.next();
+      });
+    });
+    def(proto, "drop", function drop(count) {
+      var self = this, left = Math.max(0, Number(count) || 0), ended = false;
+      return wrap(function () {
+        if (!ended) {
+          ended = true;
+          while (left > 0) { if (self.next().done) return { value: undefined, done: true }; left -= 1; }
+        }
+        return self.next();
+      });
+    });
+    def(proto, "flatMap", function flatMap(fn) {
+      if (typeof fn !== "function") throw new TypeError("mapper is not a function");
+      var outer = this, inner = null, index = 0;
+      return wrap(function () {
+        for (;;) {
+          if (inner !== null) {
+            var innerStep = inner.next();
+            if (!innerStep.done) return innerStep;
+            inner = null;
+          }
+          var step = outer.next();
+          if (step.done) return { value: undefined, done: true };
+          var mapped = fn(step.value, index++);
+          var iterFn = mapped != null ? mapped[Symbol.iterator] : undefined;
+          if (typeof iterFn === "function") inner = iterFn.call(mapped);
+          else if (mapped != null && typeof mapped.next === "function") inner = mapped;
+          else throw new TypeError("flatMap mapper must return an iterable or iterator");
+        }
+      });
+    });
+    def(proto, "some", function some(fn) {
+      if (typeof fn !== "function") throw new TypeError("predicate is not a function");
+      var index = 0;
+      for (var step = this.next(); !step.done; step = this.next()) if (fn(step.value, index++)) return true;
+      return false;
+    });
+    def(proto, "every", function every(fn) {
+      if (typeof fn !== "function") throw new TypeError("predicate is not a function");
+      var index = 0;
+      for (var step = this.next(); !step.done; step = this.next()) if (!fn(step.value, index++)) return false;
+      return true;
+    });
+    def(proto, "find", function find(fn) {
+      if (typeof fn !== "function") throw new TypeError("predicate is not a function");
+      var index = 0;
+      for (var step = this.next(); !step.done; step = this.next()) {
+        if (fn(step.value, index++)) return step.value;
+      }
+      return undefined;
+    });
+    /* pdf.js uses iterator .join(); the spec's helper is what it expects. */
+    def(proto, "join", function join(separator) {
+      return this.toArray().join(separator === undefined ? "," : String(separator));
+    });
+
+    def(IteratorShim, "from", function from(value) {
+      if (value === null || value === undefined) throw new TypeError("Iterator.from called on null or undefined");
+      var iterFn = value[Symbol.iterator];
+      if (typeof iterFn === "function") return iterFn.call(value);
+      if (typeof value.next === "function") return value;
+      throw new TypeError("Iterator.from: value is not iterable");
+    });
+
+    /* Spec behaviour: every built-in iterator prototype inherits from
+       Iterator.prototype, so iterator.join()/map()/... work on them. The
+       helpers live on the shared iterator prototype (named %IteratorPrototype%
+       in engines that have it), so walk up to the object whose prototype is
+       Object.prototype and insert ours there. */
+    function adopt(makeIterator) {
+      try {
+        var cursor = Object.getPrototypeOf(makeIterator());
+        var hops = 0;
+        while (cursor && Object.getPrototypeOf(cursor) !== Object.prototype && hops++ < 8) {
+          cursor = Object.getPrototypeOf(cursor);
+        }
+        if (cursor && cursor !== proto && Object.getPrototypeOf(cursor) === Object.prototype) {
+          Object.setPrototypeOf(cursor, proto);
+        }
+      } catch (e) { /* ignore */ }
+    }
+    adopt(function () { return [][Symbol.iterator](); });
+    adopt(function () { return ""[Symbol.iterator](); });
+    adopt(function () { return new Map()[Symbol.iterator](); });
+    adopt(function () { return new Set()[Symbol.iterator](); });
+    adopt(function () { return new Uint8Array()[Symbol.iterator](); });
+    adopt(function () { return arguments[Symbol.iterator](); });
+    adopt(function () { return (function* () { })(); });
+    try { adopt(function () { return /a/[Symbol.matchAll]("a"); }); } catch (e) { }
+
+    def(g, "Iterator", IteratorShim);
+  }
+
+  /* ------------------------------------------------- small ES2022/ES2024 gaps */
+  if (g.Promise && typeof g.Promise.withResolvers !== "function") {
+    def(g.Promise, "withResolvers", function withResolvers() {
+      var resolve, reject;
+      var promise = new Promise(function (res, rej) { resolve = res; reject = rej; });
+      return { promise: promise, resolve: resolve, reject: reject };
+    });
+  }
+  if (typeof g.Object.hasOwn !== "function") {
+    def(g.Object, "hasOwn", function hasOwn(object, key) {
+      if (object === null || object === undefined) throw new TypeError("Cannot convert undefined or null to object");
+      return Object.prototype.hasOwnProperty.call(object, key);
+    });
+  }
+  if (typeof g.Array.prototype.at !== "function") {
+    def(g.Array.prototype, "at", function at(index) {
+      var length = Number(this.length) || 0;
+      var k = Math.trunc(Number(index)) || 0;
+      if (k < 0) k += length;
+      if (k < 0 || k >= length) return undefined;
+      return this[k];
+    });
+  }
+  if (typeof g.Array.prototype.findLast !== "function") {
+    def(g.Array.prototype, "findLast", function findLast(predicate, thisArg) {
+      if (typeof predicate !== "function") throw new TypeError("predicate is not a function");
+      for (var i = this.length - 1; i >= 0; i--) if (predicate.call(thisArg, this[i], i, this)) return this[i];
+      return undefined;
+    });
+  }
+  if (typeof g.Array.prototype.findLastIndex !== "function") {
+    def(g.Array.prototype, "findLastIndex", function findLastIndex(predicate, thisArg) {
+      if (typeof predicate !== "function") throw new TypeError("predicate is not a function");
+      for (var i = this.length - 1; i >= 0; i--) if (predicate.call(thisArg, this[i], i, this)) return i;
+      return -1;
+    });
+  }
+  if (typeof g.Object.groupBy !== "function") {
+    def(g.Object, "groupBy", function groupBy(items, callback) {
+      if (items === null || items === undefined) throw new TypeError("Object.groupBy called on null or undefined");
+      if (typeof callback !== "function") throw new TypeError("callback is not a function");
+      var out = Object.create(null);
+      var list = Array.from(items);
+      for (var i = 0; i < list.length; i++) {
+        var key = String(callback(list[i], i));
+        if (!Object.prototype.hasOwnProperty.call(out, key)) out[key] = [];
+        out[key].push(list[i]);
+      }
+      return out;
+    });
+  }
+  if (typeof g.Map.groupBy !== "function") {
+    def(g.Map, "groupBy", function groupBy(items, callback) {
+      if (items === null || items === undefined) throw new TypeError("Map.groupBy called on null or undefined");
+      if (typeof callback !== "function") throw new TypeError("callback is not a function");
+      var out = new Map();
+      var list = Array.from(items);
+      for (var i = 0; i < list.length; i++) {
+        var key = callback(list[i], i);
+        if (!out.has(key)) out.set(key, []);
+        out.get(key).push(list[i]);
+      }
+      return out;
+    });
+  }
+})();
+</script>
