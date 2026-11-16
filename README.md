@@ -72,7 +72,23 @@ git clone https://github.com/madoka333/dsh-remote-access.git
 
 > **npm 同名包提示：** npm registry 中的 `dsh-remote-access` 属于其他作者，其仓库为 `KongXiangning/dsh-remote-access`，并非本仓库的插件。请使用上面的 GitHub URL 或本地发布包，不要直接运行 `npm install dsh-remote-access`。
 
-在 DSH Web GUI 的插件管理器中使用 **Install bundle / 安装 Bundle** 操作，选择该本地插件目录；如果管理器接受的是安装目标而非选择器，目标应是包含 `package.json` 的绝对目录路径。等安装结果显示已应用后，按提示重启 DSH。仅运行 `dsh plugin add` 并不等于安装 Cordis Bundle；该命令只是把参数转交给 profile 中的 pnpm。
+在 DSH Web GUI 的插件管理器中使用 **Install bundle / 安装 Bundle** 操作，选择该本地插件目录；如果管理器接受的是安装目标而非选择器，目标应是包含 `package.json` 的绝对目录路径。等安装结果显示已应用后，按提示重启 DSH。
+
+**通过 DSH CLI 安装（可替代上面的 npm 下载与 GUI 安装步骤）：**
+
+经本机 DSH `0.2.2-rc.1` 的安装代码核对，`dsh plugin add` 会在 pnpm 安装成功后识别新依赖的 `dsh.bundle`，并将 Bundle 加入目标 profile 的启用列表。执行前先按下方提示检查 `connection` 配置；如需合并自定义配置，请使用可编辑的本地源码目录安装。
+
+```bash
+dsh plugin --profile web add "https://github.com/madoka333/dsh-remote-access/archive/refs/heads/main.tar.gz"
+```
+
+或者安装本地插件目录（将占位路径替换为包含 `package.json` 的绝对路径）：
+
+```bash
+dsh plugin --profile web add "<插件目录的绝对路径>"
+```
+
+`web` 是这里的目标 profile；按实际运行环境替换，并在安装完成后重启对应的 DSH。该命令需要 DSH CLI 及其可用的 pnpm；较旧版本若没有自动启用 Bundle 的行为，请使用 GUI 的 **安装 Bundle** 流程。独立运行普通 `npm install` 不包含上述 profile 启用步骤。
 
 > **重要：先检查 `connection` 配置。** `cordis.patch.yml` 为添加 ZeroTier Host fence 而 patch `connection` 行，而 Cordis 对目标行的 `config` 是整体替换，不是深度合并。如果当前 profile 的 `connection` 行有自定义选项，请先将它们合并到本 Bundle patch 的 `config` 中，再安装；不要直接覆盖现有配置。其余未在该 patch 中列出的 Connection 选项会使用 DSH schema 默认值。
 
