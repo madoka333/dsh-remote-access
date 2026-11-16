@@ -9,6 +9,7 @@
 - 目标版本：DSH `0.2.2-rc.1` 及后续提供 `webServer.getOrigin()` 和 `webServer.tapIndex()` 的 0.2.x 版本。
 - Node.js 20.16 或更新版本。Cordis patch 使用 `process.getBuiltinModule()`。
 - ZeroTier One 网卡名需符合 `ZeroTier One [network-id]` 格式；插件发现并绑定其非内部 IPv4 地址。
+- 当前网卡自动发现面向使用上述网卡名称的 Windows 主机。macOS / Linux 主机的默认网卡名称通常不匹配，尚未验证；手机、平板、macOS 和 Linux 均可作为浏览器访问端。
 - 插件不访问 WebServer 的私有 HTTP Server，也不篡改 Connection 的认证内部状态。
 - 不提供资源缓存：当前 WebServer 没有公开原始 HTTP response 生命周期作为插件扩展点。
 
@@ -28,13 +29,13 @@ http://<运行 DSH 的电脑的 ZeroTier IPv4 地址>:3080/
 
 ### 1. 安装并加入网络
 
-先在运行 DSH 的主机上安装 ZeroTier One，再按设备平台安装客户端。请从 ZeroTier 官方下载页或对应平台的官方应用商店安装客户端：<https://www.zerotier.com/download/>。
+先在运行 DSH 的 Windows 主机上安装 ZeroTier One，再按设备平台安装访问端客户端。请从 ZeroTier 官方下载页或对应平台的官方应用商店安装客户端：<https://www.zerotier.com/download/>。
 
 | 设备平台 | 操作 |
 | --- | --- |
 | Windows 主机或客户端 | 安装并启动 ZeroTier One。在托盘菜单选择加入网络并输入 Network ID；也可在管理员终端运行 `zerotier-cli join <NETWORK_ID>`。在 ZeroTier Central 授权该设备。 |
-| macOS 主机或客户端 | 安装并启动 ZeroTier One 菜单栏应用，选择加入网络并输入 Network ID；在 Central 授权设备。 |
-| Linux 主机或客户端 | 按发行版指南安装并启动 `zerotier-one` 服务，然后运行 `sudo zerotier-cli join <NETWORK_ID>`；在 Central 授权设备。用 `sudo zerotier-cli listnetworks` 检查网络状态。 |
+| macOS 访问端 | 安装并启动 ZeroTier One 菜单栏应用，选择加入网络并输入 Network ID；在 Central 授权设备。 |
+| Linux 访问端 | 按发行版指南安装并启动 `zerotier-one` 服务，然后运行 `sudo zerotier-cli join <NETWORK_ID>`；在 Central 授权设备。用 `sudo zerotier-cli listnetworks` 检查网络状态。 |
 | iPhone / iPad | 从 App Store 安装 ZeroTier One，添加 Network ID 并启用该网络的 VPN 配置；在 Central 授权设备。设备显示已连接后，打开浏览器访问主机的 ZeroTier IP。 |
 | Android 手机 / 平板 | 从 Google Play 安装 ZeroTier One，添加并启用 Network ID；在 Central 授权设备。设备显示已连接后，打开浏览器访问主机的 ZeroTier IP。 |
 
@@ -42,55 +43,59 @@ http://<运行 DSH 的电脑的 ZeroTier IPv4 地址>:3080/
 
 ### 2. 安装插件 Bundle
 
-获取本插件源码目录，或取得 `dsh-remote-access-0.2.0.tgz` 并解压到一个本地目录。包内应有 `package.json`、`cordis.patch.yml`、`README.md` 和 `lib/`。
+仓库首页展示源码；可直接安装的 `.tgz` 压缩包放在 [Releases 下载区](https://github.com/madoka333/dsh-remote-access/releases/latest)。`.tgz` 是 npm 的安装包格式，包内包含运行代码、配置、README 和 MIT 许可证，不包含 Node.js、DSH 或本机运行数据。
 
-也可以选择以下方式获取插件，再执行下方的 **安装 Bundle** 步骤。
+> **安装前检查 `connection` 配置。** 本插件的 `cordis.patch.yml` 会替换 `connection` 行的整个 `config`，用于添加 ZeroTier Host fence。如果已有自定义选项，先下载源码，将它们与本插件的 `trustedHosts` 表达式合并后，再从本地目录安装。如果目标 profile 的 `cordis.patch.yml` 也覆盖了 `connection.config`，它会在 Bundle 之后生效，应在该 profile 的配置中同步合并，避免覆盖本插件添加的 Host fence。
 
-**通过 npm 从本 GitHub 仓库安装：**
+> **npm 同名包提示：** npm registry 中的 `dsh-remote-access` 属于其他作者，其仓库为 `KongXiangning/dsh-remote-access`，并非本仓库的插件。请使用下面的完整 URL 或本地安装包，不要直接运行 `npm install dsh-remote-access`。
 
-```bash
-npm install --prefix ./dsh-plugins --no-save "https://github.com/madoka333/dsh-remote-access/archive/refs/heads/main.tar.gz"
-```
+以下方式任选一种。当前发布版本为 `0.2.1`。
 
-**通过 npm 安装本地发布包：**
-
-从[仓库](https://github.com/madoka333/dsh-remote-access)下载 `dsh-remote-access-0.2.0.tgz`，在压缩包所在目录运行：
+**方式一：DSH CLI 安装（需要可用的 DSH CLI 和 pnpm）**
 
 ```bash
-npm install --prefix ./dsh-plugins --no-save ./dsh-remote-access-0.2.0.tgz
+dsh plugin --profile web add "https://github.com/madoka333/dsh-remote-access/releases/download/v0.2.1/dsh-remote-access-0.2.1.tgz"
 ```
 
-以上两种 npm 方式的插件目录均为 `dsh-plugins/node_modules/dsh-remote-access`。安装 Bundle 时使用该目录的绝对路径。npm 只负责下载和安装包，不会自动应用 DSH 的 `cordis.patch.yml`。
+DSH `0.2.2-rc.1` 会在安装成功后将声明了 `dsh.bundle` 的新依赖加入 profile 的启用列表。`web` 是目标 profile，按实际环境替换；完成后重启对应的 DSH。已有依赖若被手动禁用，应在插件管理器中重新启用，重复 `add` 不保证改变启用状态。
 
-**通过 Git 获取源码：**
+也可先下载该安装包，再在下载目录执行：
 
 ```bash
-git clone https://github.com/madoka333/dsh-remote-access.git
+dsh plugin --profile web add "./dsh-remote-access-0.2.1.tgz"
 ```
 
-插件目录为克隆后的 `dsh-remote-access`，运行入口已经随源码提供，无需构建。
-
-> **npm 同名包提示：** npm registry 中的 `dsh-remote-access` 属于其他作者，其仓库为 `KongXiangning/dsh-remote-access`，并非本仓库的插件。请使用上面的 GitHub URL 或本地发布包，不要直接运行 `npm install dsh-remote-access`。
-
-在 DSH Web GUI 的插件管理器中使用 **Install bundle / 安装 Bundle** 操作，选择该本地插件目录；如果管理器接受的是安装目标而非选择器，目标应是包含 `package.json` 的绝对目录路径。等安装结果显示已应用后，按提示重启 DSH。
-
-**通过 DSH CLI 安装（可替代上面的 npm 下载与 GUI 安装步骤）：**
-
-经本机 DSH `0.2.2-rc.1` 的安装代码核对，`dsh plugin add` 会在 pnpm 安装成功后识别新依赖的 `dsh.bundle`，并将 Bundle 加入目标 profile 的启用列表。执行前先按下方提示检查 `connection` 配置；如需合并自定义配置，请使用可编辑的本地源码目录安装。
+**方式二：npm 获取包，然后在 DSH 插件管理器安装**
 
 ```bash
-dsh plugin --profile web add "https://github.com/madoka333/dsh-remote-access/archive/refs/heads/main.tar.gz"
+npm install --prefix ./dsh-plugins --no-save "https://github.com/madoka333/dsh-remote-access/releases/download/v0.2.1/dsh-remote-access-0.2.1.tgz"
 ```
 
-或者安装本地插件目录（将占位路径替换为包含 `package.json` 的绝对路径）：
+或在下载目录安装本地包：
+
+```bash
+npm install --prefix ./dsh-plugins --no-save ./dsh-remote-access-0.2.1.tgz
+```
+
+得到的插件目录是 `dsh-plugins/node_modules/dsh-remote-access`。普通 `npm install` 只安装文件，不会把 Bundle 加入 DSH profile；还需执行下面的“从本地目录安装”。
+
+**方式三：Git 获取源码，然后从本地目录安装**
+
+```bash
+git clone --branch v0.2.1 https://github.com/madoka333/dsh-remote-access.git
+```
+
+插件目录为克隆后的 `dsh-remote-access`，已包含运行入口，无需构建。也可将 Release 中的 `.tgz` 解压，使用解压后的 `package` 目录。
+
+**从本地目录安装（适用于方式二、三）**
+
+在 DSH Web GUI 中打开“插件 → 添加插件”，在“包名或地址”中填写插件目录的绝对路径（该目录下应有 `package.json`），安装并启用后重启 DSH。也可使用 CLI：
 
 ```bash
 dsh plugin --profile web add "<插件目录的绝对路径>"
 ```
 
-`web` 是这里的目标 profile；按实际运行环境替换，并在安装完成后重启对应的 DSH。该命令需要 DSH CLI 及其可用的 pnpm；较旧版本若没有自动启用 Bundle 的行为，请使用 GUI 的 **安装 Bundle** 流程。独立运行普通 `npm install` 不包含上述 profile 启用步骤。
-
-> **重要：先检查 `connection` 配置。** `cordis.patch.yml` 为添加 ZeroTier Host fence 而 patch `connection` 行，而 Cordis 对目标行的 `config` 是整体替换，不是深度合并。如果当前 profile 的 `connection` 行有自定义选项，请先将它们合并到本 Bundle patch 的 `config` 中，再安装；不要直接覆盖现有配置。其余未在该 patch 中列出的 Connection 选项会使用 DSH schema 默认值。
+本地目录安装可能以链接方式使用该目录，请保留目录，不要安装后删除或移动。未安装到 DSH profile 并启用之前，单独解压或执行普通 `npm install` 不会启用远程访问。
 
 安装后，在 Bundle 配置中的 `dsh-remote-access` 行按需设置 `networkIds`、`remotePort` 和 `allowedClients`。通过修改当前 profile 配置或此 Bundle patch 配置，重启 DSH 使设置生效。
 
@@ -151,15 +156,6 @@ Windows 可在 ZeroTier One 托盘菜单查看网络/Managed IP，或在 PowerSh
 ## 卸载
 
 在 DSH 插件管理器中移除该 Bundle，按提示重启 DSH。移除后会释放插件的监听端口并撤销页面垫片。若安装前合并过 `connection` 配置，卸载后按需恢复原配置；同时检查并清理主机上为本插件创建的防火墙规则。
-
-## 开发与打包
-
-```powershell
-node --check lib/index.js
-npm pack --dry-run
-```
-
-检查打包清单只包含预期的六个文件后，再发布归档。
 
 ## License
 

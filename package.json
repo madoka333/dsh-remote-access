@@ -1,6 +1,6 @@
 {
   "name": "dsh-remote-access",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Share the DSH Web GUI with devices on local ZeroTier networks using the current webServer API.",
   "type": "module",
   "main": "lib/index.js",
